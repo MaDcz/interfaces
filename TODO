@@ -1,0 +1,3 @@
+Merge C++ interfaces to this which at the end will be a set of generators to generate various C++
+data structures with configurable capabilities. The 'iface' python module introduces a common
+format for declaring an interface.

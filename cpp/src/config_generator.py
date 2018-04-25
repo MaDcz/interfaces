@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+# TODO This is probably the first attempt to generate C++ code from an iface file.
+#      The C++ generator in codegen is meant to do this but some configuration will
+#      be probably needed.
+
 import codemodel
 
 class CppCodeGenerator(codemodel.ClassDiagramVisitor):
