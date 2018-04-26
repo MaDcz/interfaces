@@ -211,5 +211,5 @@ if __name__ == "__main__":
     diagram_generator.visit(grammar.parse(sys.stdin.read()))
 
     root = diagram_generator.root_builder.build()
-    codemodel.to_json(root)
+    print(codemodel.to_json(root))
 #endif __main__
