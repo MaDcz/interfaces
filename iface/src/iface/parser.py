@@ -206,10 +206,10 @@ class ClassDiagramGenerator(NodeVisitor):
 
 if __name__ == "__main__":
     import sys
-    import cPickle
 
     diagram_generator = ClassDiagramGenerator()
     diagram_generator.visit(grammar.parse(sys.stdin.read()))
-    diagram_root_node = diagram_generator.root_builder.build()
-    cPickle.dump(diagram_root_node, sys.stdout)
+
+    root = diagram_generator.root_builder.build()
+    codemodel.to_json(root)
 #endif __main__
