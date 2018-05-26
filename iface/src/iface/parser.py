@@ -71,8 +71,9 @@ class FieldBuilder(Builder):
         if self.field_is_repeated:
             field_type = field_type + "[0..*]"
 
-        # FIXME diagram_node = codemodel.Attribute(self.field_name, field_type)
         diagram_node = codemodel.Attribute()
+        diagram_node.attributes["name"] = self.field_name
+        diagram_node.attributes["type"] = self.field_type
         return diagram_node
     #enddef
 
@@ -96,11 +97,10 @@ class InterfaceBuilder(Builder):
         if not self.iface_name:
             raise Exception("Interface name missing")
 
-        # FIXME diagram_node = codemodel.Class(self.iface_name)
         diagram_node = codemodel.Class()
+        diagram_node.attributes["name"] = self.iface_name
         for field in self.fields:
             diagram_node.add(field.build())
-
         return diagram_node
     #enddef
 
@@ -120,7 +120,6 @@ class FileBuilder(Builder):
     #enddef
 
     def build(self):
-        # FIXME diagram_node = codemodel.Package("<root>")
         diagram_node = codemodel.Package()
         for iface in self.interfaces:
             diagram_node.add(iface.build())
