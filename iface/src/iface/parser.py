@@ -1,9 +1,9 @@
 #!/usr/bin/python
 
 import codemodel
-from parsimonious.grammar import Grammar, NodeVisitor
+import parsimonious
 
-grammar = Grammar("""
+grammar = parsimonious.Grammar("""
 file                = consistent_block*
 consistent_block    = iface / empty
 iface               = iface_decl empty* iface_body_open field* empty* iface_body_close
@@ -41,11 +41,11 @@ field_types = {
 class Builder(object):
 
     def add(self):
-        raise AssertionError, "add() not supported by Builder instance"
+        raise AssertionError("add() not supported by Builder instance")
     #enddef
 
     def build(self):
-        raise AssertionError, "build() not supported by Builder instance"
+        raise AssertionError("build() not supported by Builder instance")
     #enddef
 
 #endclass
@@ -61,11 +61,11 @@ class FieldBuilder(Builder):
 
     def build(self):
         if not self.field_name:
-            raise Exception, "Field name missing"
+            raise Exception("Field name missing")
         if not self.field_type:
-            raise Exception, "Field type missing"
+            raise Exception("Field type missing")
         if not self.field_type in field_types:
-            raise Exception, "Unknown field type '%s'" % (str(self.field_type), )
+            raise Exception("Unknown field type '%s'" % (str(self.field_type), ))
 
         field_type = self.field_type
         if self.field_is_repeated:
@@ -89,12 +89,12 @@ class InterfaceBuilder(Builder):
         if isinstance(builder, FieldBuilder):
             self.fields.append(builder)
         else:
-            raise "Unsupproted builder type (%s)" % type(builder).__name__
+            raise Exception("Unsupproted builder type (%s)" % type(builder).__name__)
     #enddef
 
     def build(self):
         if not self.iface_name:
-            raise Exception, "Interface name missing"
+            raise Exception("Interface name missing")
 
         # FIXME diagram_node = codemodel.Class(self.iface_name)
         diagram_node = codemodel.Class()
@@ -116,7 +116,7 @@ class FileBuilder(Builder):
         if isinstance(builder, InterfaceBuilder):
             self.interfaces.append(builder)
         else:
-            raise "Unsupported builder type (%s)" % type(builder).__name__
+            raise("Unsupported builder type (%s)" % type(builder).__name__)
     #enddef
 
     def build(self):
@@ -129,7 +129,7 @@ class FileBuilder(Builder):
 
 #endclass
 
-class ClassDiagramGenerator(NodeVisitor):
+class ClassDiagramGenerator(parsimonious.NodeVisitor):
 
     def __init__(self, root_builder=None):
         self.root_builder = root_builder if root_builder else FileBuilder()
@@ -165,7 +165,7 @@ class ClassDiagramGenerator(NodeVisitor):
 
     def _push_builder(self, builder):
         if not isinstance(builder, Builder):
-            raise TypeError, "Not a Builder instance"
+            raise TypeError("Not a Builder instance")
 
         self.builders_stack.append(builder)
     #enddef
@@ -176,7 +176,7 @@ class ClassDiagramGenerator(NodeVisitor):
 
     def top_builder_set_property(self, name, value):
         if not self.builders_stack:
-            raise Exception, "No builder initialized" 
+            raise Exception("No builder initialized")
 
         #def to_camel_case(what):
         #    res = u""
@@ -200,7 +200,7 @@ class ClassDiagramGenerator(NodeVisitor):
 
     def top_builder_add(self, item):
         if not self.builders_stack:
-            raise Exception, "No builder initialized" 
+            raise Exception("No builder initialized")
 
         self.builders_stack[-1].add(item)
     #enddef
