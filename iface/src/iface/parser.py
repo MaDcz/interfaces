@@ -5,13 +5,19 @@ import parsimonious
 
 grammar = parsimonious.Grammar("""
 file                = consistent_block*
-consistent_block    = iface / empty
+consistent_block    = ns / iface / empty
+ns                  = ns_decl empty* ns_body_open consistent_block* ns_body_close
 iface               = iface_decl empty* iface_body_open field* empty* iface_body_close
 field               = empty* field_decl
 
+ns_decl             = "namespace" whsp ns_name
 iface_decl          = "interface" whsp iface_name
 field_decl          = field_type field_is_repeated? whsp? field_name whsp? field_id_assignment? whsp? field_end
 empty               = whsp? comment?
+
+ns_name             = ~"[a-zA-Z_][a-zA-Z0-9_]*"
+ns_body_open        = "{"
+ns_body_close       = "}"
 
 iface_name          = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 iface_body_open     = "{"
@@ -23,7 +29,7 @@ field_id_assignment = "=" whsp? field_id
 field_id            = ~"[1-9][0-9]*"
 field_end           = ";"
 whsp                = ~"\s+"
-comment             = ~"//.*"
+comment             = ~"#.*"
 """)
 
 field_types = {
@@ -106,23 +112,50 @@ class InterfaceBuilder(Builder):
 
 #endclass
 
-class FileBuilder(Builder):
+class NamespaceBuilder(Builder):
 
     def __init__(self):
-        self.interfaces = []
+        self.ns_name = None
+        self.content = []
     #enddef
 
     def add(self, builder):
-        if isinstance(builder, InterfaceBuilder):
-            self.interfaces.append(builder)
+        if isinstance(builder, InterfaceBuilder) or isinstance(builder, NamespaceBuilder):
+            self.content.append(builder)
         else:
-            raise("Unsupported builder type (%s)" % type(builder).__name__)
+            raise Exception("Unsupproted builder type (%s)" % type(builder).__name__)
+    #enddef
+
+    def build(self):
+        if not self.ns_name:
+            raise Exception("Namespace name missing")
+
+        diagram_node = codemodel.Package()
+        diagram_node.attributes["name"] = self.ns_name
+        for builder in self.content:
+            diagram_node.add(builder.build())
+        return diagram_node
+    #enddef
+
+#endclass
+
+class FileBuilder(Builder):
+
+    def __init__(self):
+        self.content = []
+    #enddef
+
+    def add(self, builder):
+        if isinstance(builder, InterfaceBuilder) or isinstance(builder, NamespaceBuilder):
+            self.content.append(builder)
+        else:
+            raise Exception("Unsupported builder type (%s)" % type(builder).__name__)
     #enddef
 
     def build(self):
         diagram_node = codemodel.Package()
-        for iface in self.interfaces:
-            diagram_node.add(iface.build())
+        for builder in self.content:
+            diagram_node.add(builder.build())
         return diagram_node
     #enddef
 
@@ -147,6 +180,11 @@ class ClassDiagramGenerator(parsimonious.NodeVisitor):
             self._push_builder(FieldBuilder())
         elif node.expr_name in ["field_type", "field_is_repeated", "field_name", "field_id"]:
             self.top_builder_set_property(node.expr_name, node.text)
+        # namespaces
+        elif node.expr_name == "ns":
+            self._push_builder(NamespaceBuilder())
+        elif node.expr_name == "ns_name":
+            self.top_builder_set_property(node.expr_name, node.text)
         # interfaces
         elif node.expr_name == "iface":
             self._push_builder(InterfaceBuilder())
@@ -156,7 +194,7 @@ class ClassDiagramGenerator(parsimonious.NodeVisitor):
         ret = super(ClassDiagramGenerator, self).visit(node)
 
         # finalization
-        if node.expr_name in ["field", "iface"]:
+        if node.expr_name in ["field", "ns", "iface"]:
             self.top_builder_add(self._pop_builder())
 
         return ret
