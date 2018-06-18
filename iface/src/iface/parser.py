@@ -54,7 +54,11 @@ field_types = {
 }
 
 class Builder(object):
-    pass
+
+    def validity_check(self):
+        raise AssertionError("validity_check() isn't implemented by {} builder. Every builder needs to implement the function.".format(type(self).__name__))
+    #enddef
+
 #endclass
 
 class NodeBuilder(Builder):
@@ -69,105 +73,23 @@ class NodeBuilder(Builder):
         return self._attrs
     #enddef
 
-    def add(self, child_builder):
-        raise AssertionError("add() not supported by {}".format(type(self).__name__))
-    #enddef
-
-    def build(self):
-        raise AssertionError("build() not supported by {}".format(type(self).__name__))
-    #enddef
-
     def _create_node(self, node_type):
         node = node_type()
         node.attributes = self._attrs
         return node
     #enddef
 
-#endclass
-
-class FieldBuilder(NodeBuilder):
-
-    def __init__(self):
-        super(FieldBuilder, self).__init__()
-        self.field_type = ""
-        self.field_name = ""
-        self.field_id = ""
-        self.field_is_repeated = ""
-    #enddef
-
-    def build(self):
-        if not self.field_name:
-            raise Exception("Field name missing")
-        if not self.field_type:
-            raise Exception("Field type missing")
-        if not self.field_type in field_types:
-            raise Exception("Unknown field type '%s'" % (str(self.field_type), ))
-
-        field_type = self.field_type
-        if self.field_is_repeated:
-            field_type = field_type + "[0..*]"
-
-        diagram_node = self._create_node(codemodel.Attribute)
-        diagram_node.attributes["name"] = self.field_name
-        diagram_node.attributes["type"] = self.field_type
-        return diagram_node
-    #enddef
-
-#endclass
-
-class InterfaceBuilder(NodeBuilder):
-
-    def __init__(self):
-        super(InterfaceBuilder, self).__init__()
-        self.iface_name = None
-        self.fields = []
-    #enddef
-
     def add(self, child_builder):
-        if isinstance(child_builder, FieldBuilder):
-            self.fields.append(child_builder)
-        else:
-            raise Exception("Unsupproted builder type (%s)" % type(child_builder).__name__)
+        raise AssertionError("add() not supported by {}".format(type(self).__name__))
     #enddef
 
     def build(self):
-        if not self.iface_name:
-            raise Exception("Interface name missing")
-
-        diagram_node = self._create_node(codemodel.Class)
-        diagram_node.attributes["name"] = self.iface_name
-        for field in self.fields:
-            diagram_node.add(field.build())
-        return diagram_node
+        self.validity_check()
+        return self._build()
     #enddef
 
-#endclass
-
-class NamespaceBuilder(NodeBuilder):
-
-    def __init__(self):
-        super(NamespaceBuilder, self).__init__()
-        self.ns_name = None
-        self.content = []
-    #enddef
-
-    def add(self, child_builder):
-        if isinstance(child_builder, InterfaceBuilder) \
-                or isinstance(child_builder, NamespaceBuilder):
-            self.content.append(child_builder)
-        else:
-            raise Exception("Unsupproted builder type (%s)" % type(child_builder).__name__)
-    #enddef
-
-    def build(self):
-        if not self.ns_name:
-            raise Exception("Namespace name missing")
-
-        diagram_node = self._create_node(codemodel.Package)
-        diagram_node.attributes["name"] = self.ns_name
-        for builder in self.content:
-            diagram_node.add(builder.build())
-        return diagram_node
+    def _build(self):
+        raise AssertionError("build() isn't implemented by {} builder. Every builder needs to implement the function.".format(type(self).__name__))
     #enddef
 
 #endclass
@@ -176,22 +98,177 @@ class FileBuilder(NodeBuilder):
 
     def __init__(self):
         super(FileBuilder, self).__init__()
-        self.content = []
+        self._content = []
     #enddef
 
     def add(self, child_builder):
         if isinstance(child_builder, InterfaceBuilder) \
                 or isinstance(child_builder, NamespaceBuilder):
-            self.content.append(child_builder)
+            self._content.append(child_builder)
         else:
             raise Exception("Unsupported builder type (%s)" % type(child_builder).__name__)
     #enddef
 
-    def build(self):
+    def _build(self):
         diagram_node = self._create_node(codemodel.Package)
-        for builder in self.content:
+        for builder in self._content:
             diagram_node.add(builder.build())
         return diagram_node
+    #enddef
+
+    def validity_check(self):
+        pass
+    #enddef
+
+#endclass
+
+class NamespaceBuilder(NodeBuilder):
+
+    def __init__(self):
+        super(NamespaceBuilder, self).__init__()
+        self._name = None
+        self._content = []
+    #enddef
+
+    @property
+    def ns_name(self):
+        return self._name
+    #enddef
+
+    @ns_name.setter
+    def ns_name(self, data):
+        self._name = data.strip()
+    #enddef
+
+    def add(self, child_builder):
+        if isinstance(child_builder, InterfaceBuilder) \
+                or isinstance(child_builder, NamespaceBuilder):
+            self._content.append(child_builder)
+        else:
+            raise Exception("Unsupproted builder type (%s)" % type(child_builder).__name__)
+    #enddef
+
+    def _build(self):
+        diagram_node = self._create_node(codemodel.Package)
+        diagram_node.attributes["name"] = self._name
+        for builder in self._content:
+            diagram_node.add(builder.build())
+        return diagram_node
+    #enddef
+
+    def validity_check(self):
+        if not self._name:
+            raise Exception("Namespace name missing")
+    #enddef
+
+#endclass
+
+class InterfaceBuilder(NodeBuilder):
+
+    def __init__(self):
+        super(InterfaceBuilder, self).__init__()
+        self._name = None
+        self._fields = []
+    #enddef
+
+    @property
+    def iface_name(self):
+        return self._name
+    #enddef
+
+    @iface_name.setter
+    def iface_name(self, data):
+        self._name = data.strip()
+    #enddef
+
+    def add(self, child_builder):
+        if isinstance(child_builder, FieldBuilder):
+            self._fields.append(child_builder)
+        else:
+            raise Exception("Unsupproted builder type (%s)" % type(child_builder).__name__)
+    #enddef
+
+    def _build(self):
+        diagram_node = self._create_node(codemodel.Class)
+        diagram_node.attributes["name"] = self._name
+        for field in self._fields:
+            diagram_node.add(field.build())
+        return diagram_node
+    #enddef
+
+    def validity_check(self):
+        if not self._name:
+            raise Exception("Interface name missing")
+    #enddef
+
+#endclass
+
+class FieldBuilder(NodeBuilder):
+
+    def __init__(self):
+        super(FieldBuilder, self).__init__()
+        self._type = ""
+        self._name = ""
+        self._id = ""
+        self._is_repeated = ""
+    #enddef
+
+    @property
+    def field_type(self):
+        return self._type
+    #enddef
+
+    @field_type.setter
+    def field_type(self, data):
+        self._type = data.strip()
+    #enddef
+
+    @property
+    def field_name(self):
+        return self._name
+    #enddef
+
+    @field_name.setter
+    def field_name(self, data):
+        self._name = data.strip()
+    #enddef
+
+    @property
+    def field_id(self):
+        return self._id
+    #enddef
+
+    @field_id.setter
+    def field_id(self, data):
+        self._id = data.strip()
+    #enddef
+
+    @property
+    def field_is_repeated(self):
+        return self._is_repeated
+    #enddef
+
+    @field_is_repeated.setter
+    def field_is_repeated(self, data):
+        self._is_repeated = True
+    #enddef
+
+    def _build(self):
+        diagram_node = self._create_node(codemodel.Attribute)
+        diagram_node.attributes["type"] = self._type
+        diagram_node.attributes["name"] = self._name
+        # TODO How did I come up with the 'is_repeated' attribute? Is it an UML term?
+        diagram_node.attributes["is_repeated"] = self._is_repeated
+        return diagram_node
+    #enddef
+
+    def validity_check(self):
+        if not self._type:
+            raise Exception("Field type missing")
+        if not self._type in field_types:
+            raise Exception("Unknown field type '%s'" % (str(self._type), ))
+        if not self._name:
+            raise Exception("Field name missing")
     #enddef
 
 #endclass
@@ -204,22 +281,23 @@ class AttributeBuilder(Builder):
         self._value = True
     #enddef
 
-    def build(self, builder):
-        assert self._path
-        dest = builder.attributes
-        for part in self._path[:-1]:
-            dest[part] = {}
-            dest = dest[part]
-        dest[self._path[-1]] = self._value
+    @property
+    def attr_path(self):
+        return self._path
     #enddef
 
-    def _set_path(self, data):
+    @attr_path.setter
+    def attr_path(self, data):
         self._path = data.split(".")
     #enddef
 
-    attr_path = property(fset=_set_path)
+    @property
+    def attr_value(self):
+        return self._value
+    #enddef
 
-    def _set_value(self, data):
+    @attr_value.setter
+    def attr_value(self, data):
         strval = data.strip()
         assert len(strval) > 1
         assert strval[0] == "("
@@ -228,32 +306,42 @@ class AttributeBuilder(Builder):
         # TODO From string to an actual Python object.
     #enddef
 
-    attr_value = property(fset=_set_value)
+    def build(self, builder):
+        self.validity_check()
+
+        dest = builder.attributes
+        for part in self._path[:-1]:
+            dest[part] = {}
+            dest = dest[part]
+        dest[self._path[-1]] = self._value
+    #enddef
+
+    def validity_check(self):
+        if not self._path:
+            raise Exception("Attribute path not provided, duno where to store the value")
+    #enddef
 
 #endclass
 
-class ClassDiagramGenerator(parsimonious.NodeVisitor):
+class ClassDiagramBuilder(parsimonious.NodeVisitor):
 
     def __init__(self, root_builder=None):
-        super(ClassDiagramGenerator, self).__init__()
+        super(ClassDiagramBuilder, self).__init__()
         self.root_builder = root_builder if root_builder else FileBuilder()
         self.builders_stack = [ self.root_builder ]
     #enddef
 
+    def build(self):
+        return self.root_builder.build()
+    #enddef
+
     def generic_visit(self, node, visited_children):
         pass
-    #endif
-
     #enddef
 
     def visit(self, node):
-        # fields
-        if node.expr_name == "field":
-            self._push_builder(FieldBuilder())
-        elif node.expr_name in ["field_type", "field_is_repeated", "field_name", "field_id"]:
-            self._top_builder_set_property(node.expr_name, node.text)
         # namespaces
-        elif node.expr_name == "ns":
+        if node.expr_name == "ns":
             self._push_builder(NamespaceBuilder())
         elif node.expr_name == "ns_name":
             self._top_builder_set_property(node.expr_name, node.text)
@@ -262,21 +350,37 @@ class ClassDiagramGenerator(parsimonious.NodeVisitor):
             self._push_builder(InterfaceBuilder())
         elif node.expr_name == "iface_name":
             self._top_builder_set_property(node.expr_name, node.text)
+        # fields
+        elif node.expr_name == "field":
+            self._push_builder(FieldBuilder())
+        elif node.expr_name in ["field_type", "field_is_repeated", "field_name", "field_id"]:
+            self._top_builder_set_property(node.expr_name, node.text)
+        # attributes
         elif node.expr_name == "attr":
             self._push_builder(AttributeBuilder())
         elif node.expr_name == "attr_path":
             self._top_builder_set_property("attr_path", node.text)
         elif node.expr_name == "attr_value":
             self._top_builder_set_property("attr_value", node.text)
+        #endif
 
-        ret = super(ClassDiagramGenerator, self).visit(node)
+        ret = super(ClassDiagramBuilder, self).visit(node)
 
         # finalization
-        if node.expr_name in ["ns", "iface", "field"]:
+        if node.expr_name == "ns":
+            self._top_builder_add(self._pop_builder())
+        if node.expr_name == "iface":
+            interface_builder = self._pop_builder()
+            self._top_builder_add(interface_builder)
+            interface_builder.validity_check()
+            # TODO Full name including relative namespace.
+            field_types[interface_builder.iface_name] = interface_builder
+        elif node.expr_name == "field":
             self._top_builder_add(self._pop_builder())
         elif node.expr_name == "attr":
             attr_builder = self._pop_builder()
             attr_builder.build(self._top_builder)
+        #endif
 
         return ret
     #enddef
@@ -330,15 +434,15 @@ class ClassDiagramGenerator(parsimonious.NodeVisitor):
 
         self.builders_stack[-1].add(item)
     #enddef
-        
+
 #endclass
 
 if __name__ == "__main__":
     import sys
 
-    diagram_generator = ClassDiagramGenerator()
-    diagram_generator.visit(grammar.parse(sys.stdin.read()))
+    class_diagram_builder = ClassDiagramBuilder()
+    class_diagram_builder.visit(grammar.parse(sys.stdin.read()))
 
-    root = diagram_generator.root_builder.build()
-    print(codemodel.to_json(root))
+    class_diagram = class_diagram_builder.build()
+    print(codemodel.to_json(class_diagram))
 #endif __main__
