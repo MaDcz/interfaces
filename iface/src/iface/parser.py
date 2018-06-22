@@ -6,15 +6,15 @@ import parsimonious
 grammar = parsimonious.Grammar("""
 file                = consistent_block*
 consistent_block    = attr / ns / iface / empty
-attr                = attr_decl whsp? attr_value?
+attr                = attr_decl attr_value_notation?
 ns                  = ns_decl empty* ns_body_open consistent_block* ns_body_close
-iface               = iface_decl empty* iface_body_open field* empty* iface_body_close
+iface               = iface_decl empty* iface_body_open attr* field* empty* iface_body_close
 field               = empty* field_decl
 
-attr_decl           = "@" whsp? attr_path
+attr_decl           = empty* "@" attr_path
 ns_decl             = "namespace" whsp ns_name
 iface_decl          = "interface" whsp iface_name
-field_decl          = field_type field_is_repeated? whsp? field_name whsp? field_id_assignment? whsp? field_end
+field_decl          = field_type field_is_repeated? whsp? field_name whsp? field_id_assignment? attr* field_end
 empty               = whsp? comment?
 
 ns_name             = ~"[a-zA-Z_][a-zA-Z0-9_]*"
@@ -30,12 +30,19 @@ field_type          = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 field_name          = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 field_id_assignment = "=" whsp? field_id
 field_id            = ~"[1-9][0-9]*"
-field_end           = ";"
+field_end           = empty* ";"
 
-attr_path           = ~"[a-zA-Z_][a-zA-Z0-9_.]*"
-attr_value          = ~"(.*)"
-attr_value_open     = "("
-attr_value_close    = ")"
+attr_path             = ~"[a-zA-Z_][a-zA-Z0-9_.]*"
+attr_value_notation   = attr_value_open attr_value attr_value_close
+attr_value            = attr_value_string / attr_value_bool / attr_value_int / attr_value_float
+attr_value_string     = ~'"[^"]*"'
+attr_value_bool       = attr_value_bool_true / attr_value_bool_false
+attr_value_bool_true  = ~"[tT][rR][uU][eE]"
+attr_value_bool_false = ~"[fF][aA][lL][sS][eE]"
+attr_value_int        = ~"[0-9]+"
+attr_value_float      = ~"[0-9]*\.[0-9]+"
+attr_value_open       = "("
+attr_value_close      = ")"
 
 whsp                = ~"\s+"
 comment             = ~"#.*"
@@ -210,7 +217,7 @@ class FieldBuilder(NodeBuilder):
         self._type = ""
         self._name = ""
         self._id = ""
-        self._is_repeated = ""
+        self._is_repeated = False
     #enddef
 
     @property
@@ -298,12 +305,27 @@ class AttributeBuilder(Builder):
 
     @attr_value.setter
     def attr_value(self, data):
-        strval = data.strip()
-        assert len(strval) > 1
-        assert strval[0] == "("
-        assert strval[-1] == ")"
-        self._value = strval[1:-1]
-        # TODO From string to an actual Python object.
+        try:
+            strval = data[0]
+            strval_rule = data[1]
+        except:
+            strval = data
+            strval_rule = "attr_value_string"
+
+        if strval_rule == "attr_value_string":
+            assert len(strval) > 1
+            assert (strval[0] == '"' and strval[-1] == '"') \
+                    or (strval[0] == "'" and strval[-1] == "'")
+            self._value = strval[1:-1]
+        elif strval_rule == "attr_value_bool":
+            strval = strval.lower()
+            self._value = strval == "true"
+        elif strval_rule == "attr_value_int":
+            self._value = int(strval)
+        elif strval_rule == "attr_value_float":
+            self._value = float(strval)
+        else:
+            raise Exception("Unsupportd attribute value rule '{}'".format(strval_rule))
     #enddef
 
     def build(self, builder):
@@ -360,8 +382,11 @@ class ClassDiagramBuilder(parsimonious.NodeVisitor):
             self._push_builder(AttributeBuilder())
         elif node.expr_name == "attr_path":
             self._top_builder_set_property("attr_path", node.text)
-        elif node.expr_name == "attr_value":
-            self._top_builder_set_property("attr_value", node.text)
+        elif node.expr_name == "attr_value_string" \
+                or node.expr_name == "attr_value_bool" \
+                or node.expr_name == "attr_value_int" \
+                or node.expr_name == "attr_value_float":
+            self._top_builder_set_property("attr_value", (node.text, node.expr_name))
         #endif
 
         ret = super(ClassDiagramBuilder, self).visit(node)
