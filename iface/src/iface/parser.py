@@ -26,11 +26,14 @@ iface_body_open     = "{"
 iface_body_close    = "}"
 
 field_is_repeated   = "[]"
-field_type          = ~"[a-zA-Z_][a-zA-Z0-9_]*"
+field_type          = name_part name_next_part*
 field_name          = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 field_id_assignment = "=" whsp? field_id
 field_id            = ~"[1-9][0-9]*"
 field_end           = empty* ";"
+
+name_next_part      = "." name_part
+name_part           = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 
 attr_path             = ~"[a-zA-Z_][a-zA-Z0-9_.]*"
 attr_value_notation   = attr_value_open attr_value attr_value_close
@@ -60,7 +63,35 @@ field_types = {
     "bytes"     : None,
 }
 
+def get_parent_namespaces(builder):
+    namespaces = []
+    parent = builder.parent
+    while parent is not None:
+        if isinstance(parent, NamespaceBuilder):
+            namespaces.insert(0, parent.ns_name)
+        parent = parent.parent
+    pass
+    return namespaces
+#enddef
+
 class Builder(object):
+
+    def __init__(self):
+        self._parent = None
+    #enddef
+
+    def add(self, child_builder):
+        raise AssertionError("add() not supported by {}".format(type(self).__name__))
+    #enddef
+
+    @property
+    def parent(self):
+        return self._parent
+    #enddef
+
+    def set_parent(self, parent):
+        self._parent = parent
+    #enddef
 
     def validity_check(self):
         raise AssertionError("validity_check() isn't implemented by {} builder. Every builder needs to implement the function.".format(type(self).__name__))
@@ -86,10 +117,6 @@ class NodeBuilder(Builder):
         return node
     #enddef
 
-    def add(self, child_builder):
-        raise AssertionError("add() not supported by {}".format(type(self).__name__))
-    #enddef
-
     def build(self):
         self.validity_check()
         return self._build()
@@ -112,6 +139,7 @@ class FileBuilder(NodeBuilder):
         if isinstance(child_builder, InterfaceBuilder) \
                 or isinstance(child_builder, NamespaceBuilder):
             self._content.append(child_builder)
+            child_builder.set_parent(self)
         else:
             raise Exception("Unsupported builder type (%s)" % type(child_builder).__name__)
     #enddef
@@ -151,6 +179,7 @@ class NamespaceBuilder(NodeBuilder):
         if isinstance(child_builder, InterfaceBuilder) \
                 or isinstance(child_builder, NamespaceBuilder):
             self._content.append(child_builder)
+            child_builder.set_parent(self)
         else:
             raise Exception("Unsupproted builder type (%s)" % type(child_builder).__name__)
     #enddef
@@ -191,11 +220,17 @@ class InterfaceBuilder(NodeBuilder):
     def add(self, child_builder):
         if isinstance(child_builder, FieldBuilder):
             self._fields.append(child_builder)
+            child_builder.set_parent(self)
         else:
             raise Exception("Unsupproted builder type (%s)" % type(child_builder).__name__)
     #enddef
 
     def _build(self):
+        # Register interface so it can be used in consequent field declaration.
+        full_type = ".".join(get_parent_namespaces(self) + [ self._name ])
+        field_types[full_type] = self
+
+        # Build codemodel node.
         diagram_node = self._create_node(codemodel.Class)
         diagram_node.attributes["name"] = self._name
         for field in self._fields:
@@ -272,8 +307,17 @@ class FieldBuilder(NodeBuilder):
     def validity_check(self):
         if not self._type:
             raise Exception("Field type missing")
+        def check_type():
+            namespaces = get_parent_namespaces(self)
+            for i in reversed(range(len(namespaces) + 1)):
+                full_type = ".".join(namespaces[0:i] + [ self._type ])
+                if full_type in field_types:
+                    return True
+            return False
+        #enddef
         if not self._type in field_types:
-            raise Exception("Unknown field type '%s'" % (str(self._type), ))
+            if not check_type():
+                raise Exception("Unknown field type '%s'" % (str(self._type), ))
         if not self._name:
             raise Exception("Field name missing")
     #enddef
@@ -395,11 +439,7 @@ class ClassDiagramBuilder(parsimonious.NodeVisitor):
         if node.expr_name == "ns":
             self._top_builder_add(self._pop_builder())
         if node.expr_name == "iface":
-            interface_builder = self._pop_builder()
-            self._top_builder_add(interface_builder)
-            interface_builder.validity_check()
-            # TODO Full name including relative namespace.
-            field_types[interface_builder.iface_name] = interface_builder
+            self._top_builder_add(self._pop_builder())
         elif node.expr_name == "field":
             self._top_builder_add(self._pop_builder())
         elif node.expr_name == "attr":

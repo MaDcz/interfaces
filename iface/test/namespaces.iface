@@ -1,0 +1,38 @@
+namespace a {
+
+interface A1
+{
+}
+
+namespace b {
+
+namespace a {
+
+interface A1
+{
+}
+
+} # namespace a.b.a
+
+interface AB
+{
+  A1 a1;
+  a.A1 a1_full;
+}
+
+} # namespace a.b
+
+interface A2
+{
+  b.AB ab;
+  a.b.AB ab_full;
+}
+
+namespace c {
+
+interface AC
+{
+  a.b.AB ab;
+}
+
+}} # namespace a.c
