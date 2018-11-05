@@ -297,7 +297,7 @@ class FieldBuilder(NodeBuilder):
 
     def _build(self):
         diagram_node = self._create_node(codemodel.Attribute)
-        diagram_node.attributes["type"] = self._type
+        diagram_node.attributes["type"] = self._type.split(".")
         diagram_node.attributes["name"] = self._name
         # TODO How did I come up with the 'is_repeated' attribute? Is it an UML term?
         diagram_node.attributes["is_repeated"] = self._is_repeated
