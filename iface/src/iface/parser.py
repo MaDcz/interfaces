@@ -5,17 +5,21 @@ import parsimonious
 
 grammar = parsimonious.Grammar("""
 file                = consistent_block*
-consistent_block    = attr / ns / iface / empty
+consistent_block    = include / attr / ns / iface / empty
+include             = empty* include_decl
 attr                = attr_decl attr_value_notation?
 ns                  = ns_decl empty* ns_body_open consistent_block* ns_body_close
 iface               = iface_decl empty* iface_body_open attr* field* empty* iface_body_close
 field               = empty* field_decl
 
+include_decl        = "include" whsp include_filepath
 attr_decl           = empty* "@" attr_path
 ns_decl             = "namespace" whsp ns_name
 iface_decl          = "interface" whsp iface_name
 field_decl          = field_type field_is_repeated? whsp? field_name whsp? field_id_assignment? attr* field_end
 empty               = whsp? comment?
+
+include_filepath    = ~'"[^"]*"'
 
 ns_name             = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 ns_body_open        = "{"
@@ -389,10 +393,66 @@ class AttributeBuilder(Builder):
 
 #endclass
 
-class ClassDiagramBuilder(parsimonious.NodeVisitor):
+class ParsimoniousNodeVisitor(parsimonious.NodeVisitor):
+
+    class Node(object):
+
+        def __init__(self, parsimonious_node):
+            self._parsimonious_node = parsimonious_node
+        #enddef
+
+        @property
+        def name(self):
+            return self._parsimonious_node.expr_name
+        #enddef
+
+        @property
+        def text(self):
+            return self._parsimonious_node.text
+        #enddef
+
+    #endclass
+
+    NOI = set([ "include", "include_filepath",
+                "ns", "ns_name",
+                "iface", "iface_name",
+                "field", "field_type", "field_is_repeated", "field_name", "field_id",
+                "attr", "attr_path", "attr_value_string", "attr_value_bool", "attr_value_int", "attr_value_float" ])
+
+    def __init__(self, builders=[]):
+        super(ParsimoniousNodeVisitor, self).__init__()
+
+        self._builders = builders
+    #enddef
+
+    def generic_visit(self, node, visited_children):
+        pass
+    #enddef
+
+    def visit(self, parsimonious_node):
+        node = ParsimoniousNodeVisitor.Node(parsimonious_node)
+
+        assert "iface" in ParsimoniousNodeVisitor.NOI
+        interested = node.name in ParsimoniousNodeVisitor.NOI
+
+        if interested:
+            for builder in self._builders:
+                builder.node_begin(node)
+
+        ret = super(ParsimoniousNodeVisitor, self).visit(parsimonious_node)
+
+        if interested:
+            for builder in self._builders:
+                builder.node_end(node)
+
+        return ret
+    #enddef
+
+#endclass
+
+class ClassDiagramBuilder(object):
 
     def __init__(self, root_builder=None):
-        super(ClassDiagramBuilder, self).__init__()
         self.root_builder = root_builder if root_builder else FileBuilder()
         self.builders_stack = [ self.root_builder ]
     #enddef
@@ -401,53 +461,45 @@ class ClassDiagramBuilder(parsimonious.NodeVisitor):
         return self.root_builder.build()
     #enddef
 
-    def generic_visit(self, node, visited_children):
-        pass
+    def node_begin(self, node):
+        # namespaces
+        if node.name == "ns":
+            self._push_builder(NamespaceBuilder())
+        elif node.name == "ns_name":
+            self._top_builder_set_property(node.name, node.text)
+        # interfaces
+        elif node.name == "iface":
+            self._push_builder(InterfaceBuilder())
+        elif node.name == "iface_name":
+            self._top_builder_set_property(node.name, node.text)
+        # fields
+        elif node.name == "field":
+            self._push_builder(FieldBuilder())
+        elif node.name in ["field_type", "field_is_repeated", "field_name", "field_id"]:
+            self._top_builder_set_property(node.name, node.text)
+        # attributes
+        elif node.name == "attr":
+            self._push_builder(AttributeBuilder())
+        elif node.name == "attr_path":
+            self._top_builder_set_property("attr_path", node.text)
+        elif node.name == "attr_value_string" \
+                or node.name == "attr_value_bool" \
+                or node.name == "attr_value_int" \
+                or node.name == "attr_value_float":
+            self._top_builder_set_property("attr_value", (node.text, node.name))
+        #endif
     #enddef
 
-    def visit(self, node):
-        # namespaces
-        if node.expr_name == "ns":
-            self._push_builder(NamespaceBuilder())
-        elif node.expr_name == "ns_name":
-            self._top_builder_set_property(node.expr_name, node.text)
-        # interfaces
-        elif node.expr_name == "iface":
-            self._push_builder(InterfaceBuilder())
-        elif node.expr_name == "iface_name":
-            self._top_builder_set_property(node.expr_name, node.text)
-        # fields
-        elif node.expr_name == "field":
-            self._push_builder(FieldBuilder())
-        elif node.expr_name in ["field_type", "field_is_repeated", "field_name", "field_id"]:
-            self._top_builder_set_property(node.expr_name, node.text)
-        # attributes
-        elif node.expr_name == "attr":
-            self._push_builder(AttributeBuilder())
-        elif node.expr_name == "attr_path":
-            self._top_builder_set_property("attr_path", node.text)
-        elif node.expr_name == "attr_value_string" \
-                or node.expr_name == "attr_value_bool" \
-                or node.expr_name == "attr_value_int" \
-                or node.expr_name == "attr_value_float":
-            self._top_builder_set_property("attr_value", (node.text, node.expr_name))
-        #endif
-
-        ret = super(ClassDiagramBuilder, self).visit(node)
-
-        # finalization
-        if node.expr_name == "ns":
+    def node_end(self, node):
+        if node.name == "ns":
             self._top_builder_add(self._pop_builder())
-        if node.expr_name == "iface":
+        if node.name == "iface":
             self._top_builder_add(self._pop_builder())
-        elif node.expr_name == "field":
+        elif node.name == "field":
             self._top_builder_add(self._pop_builder())
-        elif node.expr_name == "attr":
+        elif node.name == "attr":
             attr_builder = self._pop_builder()
             attr_builder.build(self._top_builder)
-        #endif
-
-        return ret
     #enddef
 
     def _push_builder(self, builder):
@@ -506,7 +558,8 @@ if __name__ == "__main__":
     import sys
 
     class_diagram_builder = ClassDiagramBuilder()
-    class_diagram_builder.visit(grammar.parse(sys.stdin.read()))
+
+    ParsimoniousNodeVisitor([ class_diagram_builder ]).visit(grammar.parse(sys.stdin.read()))
 
     class_diagram = class_diagram_builder.build()
     print(codemodel.to_json(class_diagram))
