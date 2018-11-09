@@ -12,14 +12,14 @@ ns                  = ns_decl empty* ns_body_open consistent_block* ns_body_clos
 iface               = iface_decl empty* iface_body_open attr* field* empty* iface_body_close
 field               = empty* field_decl
 
-include_decl        = "include" whsp include_filepath
+include_decl        = "include" whsp '"' include_filepath '"'
 attr_decl           = empty* "@" attr_path
 ns_decl             = "namespace" whsp ns_name
 iface_decl          = "interface" whsp iface_name
 field_decl          = field_type field_is_repeated? whsp? field_name whsp? field_id_assignment? attr* field_end
 empty               = whsp? comment?
 
-include_filepath    = ~'"[^"]*"'
+include_filepath    = ~'[^"]*'
 
 ns_name             = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 ns_body_open        = "{"
@@ -230,11 +230,6 @@ class InterfaceBuilder(NodeBuilder):
     #enddef
 
     def _build(self):
-        # Register interface so it can be used in consequent field declaration.
-        full_type = ".".join(get_parent_namespaces(self) + [ self._name ])
-        field_types[full_type] = self
-
-        # Build codemodel node.
         diagram_node = self._create_node(codemodel.Class)
         diagram_node.attributes["name"] = self._name
         for field in self._fields:
@@ -319,7 +314,7 @@ class FieldBuilder(NodeBuilder):
                     return True
             return False
         #enddef
-        if not self._type in field_types:
+        if not self._type in field_types: # FIXME This doesn't look alright.
             if not check_type():
                 raise Exception("Unknown field type '%s'" % (str(self._type), ))
         if not self._name:
@@ -448,6 +443,83 @@ class ParsimoniousNodeVisitor(parsimonious.NodeVisitor):
         return ret
     #enddef
 
+    @classmethod
+    def process_file(cls, fpath, builders):
+        with open(fpath, "r") as f:
+            inp = f.read()
+            cls.process_input(inp, builders)
+    #enddef
+
+    @classmethod
+    def process_input(cls, inp, builders):
+        tree = grammar.parse(inp)
+        tree_visitor = cls(builders)
+        tree_visitor.visit(tree)
+    #enddef
+
+#endclass
+
+class InterfacesIndexBuilder(object):
+
+    def __init__(self, include_paths):
+        self._include_paths = include_paths
+        self._nodes_stack = []
+    #enddef
+
+    def node_begin(self, node):
+        if node.name == "ns":
+            self._nodes_stack.append(NamespaceBuilder())
+
+        elif node.name == "ns_name":
+            assert self._nodes_stack
+            assert isinstance(self._nodes_stack[-1], NamespaceBuilder)
+            setattr(self._nodes_stack[-1], node.name, node.text)
+
+        elif node.name == "iface":
+            self._nodes_stack.append(InterfaceBuilder())
+
+        elif node.name == "iface_name":
+            assert self._nodes_stack
+            assert isinstance(self._nodes_stack[-1], InterfaceBuilder)
+            setattr(self._nodes_stack[-1], node.name, node.text)
+
+            # Register interface.
+            if node.name == "iface_name":
+                def get_name(builder):
+                    if isinstance(builder, NamespaceBuilder):
+                        return builder.ns_name
+                    elif isinstance(builder, InterfaceBuilder):
+                        return builder.iface_name
+                    else:
+                        assert False
+                #enddef
+                full_name_parts = map(lambda b: get_name(b), self._nodes_stack)
+                full_name = ".".join(full_name_parts)
+
+                if full_name in field_types:
+                    raise RuntimeError("Redefinition of type '{}'".format(full_name))
+                else:
+                    field_types[full_name] = None
+
+        elif node.name == "include_filepath":
+            for include_path in self._include_paths:
+                import os.path
+                ParsimoniousNodeVisitor.process_file(os.path.join(include_path, node.text),
+                        [ InterfacesIndexBuilder(self._include_paths) ])
+        #endif
+    #enddef
+
+    def node_end(self, node):
+        if node.name == "ns":
+            assert self._nodes_stack
+            assert isinstance(self._nodes_stack[-1], NamespaceBuilder)
+            self._nodes_stack.pop()
+        elif node.name == "iface":
+            assert self._nodes_stack
+            assert isinstance(self._nodes_stack[-1], InterfaceBuilder)
+            self._nodes_stack.pop()
+    #enddef
+
 #endclass
 
 class ClassDiagramBuilder(object):
@@ -555,12 +627,22 @@ class ClassDiagramBuilder(object):
 #endclass
 
 if __name__ == "__main__":
+    import argparse
     import sys
 
+    args_parser = argparse.ArgumentParser(description="Generate code based on the input.")
+    args_parser.add_argument("-o", "--output", dest="output", default="", help="output file base name or empty (default) for stdout")
+    args_parser.add_argument("-I", "--includepath", dest="include_paths", nargs="*", default=[], help="paths where to look for included files")
+
+    args = args_parser.parse_args()
+
+    interfaces_index_builder = InterfacesIndexBuilder(args.include_paths)
     class_diagram_builder = ClassDiagramBuilder()
 
-    ParsimoniousNodeVisitor([ class_diagram_builder ]).visit(grammar.parse(sys.stdin.read()))
+    # Parse input into the parsimonious tree and process it.
+    inp = sys.stdin.read()
+    ParsimoniousNodeVisitor.process_input(inp, [ interfaces_index_builder, class_diagram_builder ])
 
-    class_diagram = class_diagram_builder.build()
-    print(codemodel.to_json(class_diagram))
+    # Print the codemodel to output.
+    print(codemodel.to_json(class_diagram_builder.build()))
 #endif __main__
