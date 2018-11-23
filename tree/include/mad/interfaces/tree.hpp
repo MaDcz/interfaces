@@ -1,5 +1,5 @@
-#ifndef __MAD_INTERFACES_TREE_H__
-#define __MAD_INTERFACES_TREE_H__
+#ifndef __MAD_INTERFACES_TREE_HPP__
+#define __MAD_INTERFACES_TREE_HPP__
 
 #include <iterator>
 #include <map>
@@ -216,4 +216,4 @@ private:
 
 }}} // namespace mad::interfaces::tree
 
-#endif //__MAD_INTERFACES_TREE_H__
+#endif //__MAD_INTERFACES_TREE_HPP__
