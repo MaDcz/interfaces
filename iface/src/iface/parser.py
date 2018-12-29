@@ -5,10 +5,12 @@ import parsimonious
 
 grammar = parsimonious.Grammar("""
 file                = consistent_block*
-consistent_block    = include / attr / ns / iface / empty
+consistent_block    = include / attr / ns / using_interface_directive / using_valuetype_directive / iface / empty
 include             = empty* include_decl
 attr                = attr_decl attr_value_notation?
 ns                  = ns_decl empty* ns_body_open consistent_block* ns_body_close
+using_interface_directive = using_directive_keyword whsp iface_keyword whsp iface_name directive_end
+using_valuetype_directive = using_directive_keyword whsp valuetype_name directive_end
 iface               = iface_decl empty* iface_body_open attr* field* empty* iface_body_close
 field               = empty* field_decl
 
@@ -19,15 +21,26 @@ iface_decl          = "interface" whsp iface_name
 field_decl          = field_type field_is_repeated? whsp? field_name whsp? field_id_assignment? attr* field_end
 empty               = whsp? comment?
 
+using_directive_keyword = "using"
+
+directive_end = entity_end
+
+entity_end        = empty* ";"
+entity_body_start = "{{"
+entity_body_end   = "}}"
+
+valuetype_name = {type_name}
+
 include_filepath    = ~'[^"]*'
 
 ns_name             = ~"[a-zA-Z_][a-zA-Z0-9_]*"
-ns_body_open        = "{"
-ns_body_close       = "}"
+ns_body_open        = "{{"
+ns_body_close       = "}}"
 
-iface_name          = ~"[a-zA-Z_][a-zA-Z0-9_]*"
-iface_body_open     = "{"
-iface_body_close    = "}"
+iface_keyword       = "interface"
+iface_name          = {type_name}
+iface_body_open     = "{{"
+iface_body_close    = "}}"
 
 field_is_repeated   = "[]"
 field_type          = name_part name_next_part*
@@ -53,7 +66,7 @@ attr_value_close      = ")"
 
 whsp                = ~"\s+"
 comment             = ~"#.*"
-""")
+""".format(type_name='~"[a-zA-Z_][a-zA-Z0-9_]*"'))
 
 field_types = {
     "int"       : None,
@@ -66,6 +79,16 @@ field_types = {
     "string"    : None,
     "bytes"     : None,
 }
+
+opts = {
+    "debug": False
+}
+
+def print_debug(*posargs, **kwargs):
+    import sys
+    if opts["debug"]:
+        print("[D]", *posargs, **kwargs, file=sys.stderr)
+#enddef
 
 def get_parent_namespaces(builder):
     namespaces = []
@@ -410,6 +433,8 @@ class ParsimoniousNodeVisitor(parsimonious.NodeVisitor):
 
     NOI = set([ "include", "include_filepath",
                 "ns", "ns_name",
+                "using_interface_directive", "using_valuetype_directive",
+                "valuetype_name",
                 "iface", "iface_name",
                 "field", "field_type", "field_is_repeated", "field_name", "field_id",
                 "attr", "attr_path", "attr_value_string", "attr_value_bool", "attr_value_int", "attr_value_float" ])
@@ -464,60 +489,92 @@ class InterfacesIndexBuilder(object):
     def __init__(self, include_paths):
         self._include_paths = include_paths
         self._nodes_stack = []
+        self._type_nodes_stack = []
     #enddef
 
     def node_begin(self, node):
         if node.name == "ns":
-            self._nodes_stack.append(NamespaceBuilder())
+            self._type_nodes_stack.append(NamespaceBuilder())
 
         elif node.name == "ns_name":
-            assert self._nodes_stack
-            assert isinstance(self._nodes_stack[-1], NamespaceBuilder)
-            setattr(self._nodes_stack[-1], node.name, node.text)
+            assert self._type_nodes_stack
+            assert isinstance(self._type_nodes_stack[-1], NamespaceBuilder)
+            setattr(self._type_nodes_stack[-1], node.name, node.text)
 
         elif node.name == "iface":
-            self._nodes_stack.append(InterfaceBuilder())
+            self._type_nodes_stack.append(InterfaceBuilder())
 
-        elif node.name == "iface_name":
-            assert self._nodes_stack
-            assert isinstance(self._nodes_stack[-1], InterfaceBuilder)
-            setattr(self._nodes_stack[-1], node.name, node.text)
+        elif node.name == "iface_name" or node.name == "valuetype_name":
+            def get_name_part(builder_or_name):
+                if isinstance(builder_or_name, str):
+                    return builder_or_name
+                elif isinstance(builder_or_name, NamespaceBuilder):
+                    return builder_or_name.ns_name
+                elif isinstance(builder_or_name, InterfaceBuilder):
+                    return builder_or_name.iface_name
+                else:
+                    assert False
+            #enddef
+
+            def get_full_name(stack):
+                full_name_parts = map(lambda b: get_name_part(b), stack)
+                return ".".join(full_name_parts)
+            #enddef
+
+            full_name = ""
+            if self._find_parent_by_name("iface"):
+                assert self._type_nodes_stack
+                assert isinstance(self._type_nodes_stack[-1], InterfaceBuilder)
+                setattr(self._type_nodes_stack[-1], node.name, node.text)
+                full_name = get_full_name(self._type_nodes_stack)
+            elif self._find_parent_by_name("using_interface_directive"):
+                full_name = get_full_name(self._type_nodes_stack + [ node.text ])
+            elif self._find_parent_by_name("using_valuetype_directive"):
+                full_name = get_full_name(self._type_nodes_stack + [ node.text ])
+            else:
+                assert False
 
             # Register interface.
-            if node.name == "iface_name":
-                def get_name(builder):
-                    if isinstance(builder, NamespaceBuilder):
-                        return builder.ns_name
-                    elif isinstance(builder, InterfaceBuilder):
-                        return builder.iface_name
-                    else:
-                        assert False
-                #enddef
-                full_name_parts = map(lambda b: get_name(b), self._nodes_stack)
-                full_name = ".".join(full_name_parts)
-
-                if full_name in field_types:
-                    raise RuntimeError("Redefinition of type '{}'".format(full_name))
-                else:
-                    field_types[full_name] = None
+            assert full_name
+            if full_name in field_types:
+                raise RuntimeError("Redefinition of type '{}'".format(full_name))
+            else:
+                print_debug("Registering type '{}'.".format(full_name))
+                field_types[full_name] = None
 
         elif node.name == "include_filepath":
             for include_path in self._include_paths:
                 import os.path
-                ParsimoniousNodeVisitor.process_file(os.path.join(include_path, node.text),
+                # TODO Detect already indexed and loops.
+                filepath = os.path.join(include_path, node.text)
+                print_debug(">>> Indexing file '{}'".format(filepath))
+                ParsimoniousNodeVisitor.process_file(filepath,
                         [ InterfacesIndexBuilder(self._include_paths) ])
+                print_debug("<<< Indexing file '{}'".format(filepath))
         #endif
+
+        self._nodes_stack.append(node)
     #enddef
 
     def node_end(self, node):
+        self._nodes_stack.pop()
+
         if node.name == "ns":
-            assert self._nodes_stack
-            assert isinstance(self._nodes_stack[-1], NamespaceBuilder)
-            self._nodes_stack.pop()
+            assert self._type_nodes_stack
+            assert isinstance(self._type_nodes_stack[-1], NamespaceBuilder)
+            self._type_nodes_stack.pop()
+
         elif node.name == "iface":
-            assert self._nodes_stack
-            assert isinstance(self._nodes_stack[-1], InterfaceBuilder)
-            self._nodes_stack.pop()
+            assert self._type_nodes_stack
+            assert isinstance(self._type_nodes_stack[-1], InterfaceBuilder)
+            self._type_nodes_stack.pop()
+    #enddef
+
+    def _find_parent_by_name(self, name):
+        for node in reversed(self._nodes_stack):
+            if node.name == name:
+                return node
+        return None
     #enddef
 
 #endclass
@@ -633,8 +690,11 @@ if __name__ == "__main__":
     args_parser = argparse.ArgumentParser(description="Generate code based on the input.")
     args_parser.add_argument("-o", "--output", dest="output", default="", help="output file base name or empty (default) for stdout")
     args_parser.add_argument("-I", "--includepath", dest="include_paths", nargs="*", default=[], help="paths where to look for included files")
+    args_parser.add_argument("-d", "--debug", dest="debug", default=False, action="store_true", help="turns debugging messages on")
 
     args = args_parser.parse_args()
+
+    opts["debug"] = args.debug
 
     interfaces_index_builder = InterfacesIndexBuilder(args.include_paths)
     class_diagram_builder = ClassDiagramBuilder()
