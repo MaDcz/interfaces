@@ -370,7 +370,10 @@ class FieldBuilder(NodeBuilder):
 
     def _build(self):
         diagram_node = self._create_node(codemodel.Attribute)
+        # TODO Don't split it, the splitted form can't be used as a key of an json object. The '.' notation
+        # is used in 'using' section, so keep it consistent.
         diagram_node.attributes["type"] = self._type.split(".")
+        diagram_node.attributes["full_type"] = self._full_type.split(".")
         diagram_node.attributes["name"] = self._name
         # TODO How did I come up with the 'is_repeated' attribute? Is it an UML term?
         diagram_node.attributes["is_repeated"] = self._is_repeated
@@ -837,5 +840,5 @@ if __name__ == "__main__":
     ParsimoniousNodeVisitor.process_input(inp, [ interfaces_index_builder, class_diagram_builder ])
 
     # Print the codemodel to output.
-    print(codemodel.to_json(class_diagram_builder.build()))
+    print(codemodel.to_json(class_diagram_builder.build()), end="")
 #endif __main__
