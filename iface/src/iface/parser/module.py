@@ -1,5 +1,3 @@
-#!/usr/bin/python
-
 import codemodel
 import parsimonious
 
@@ -818,27 +816,3 @@ class ClassDiagramBuilder(object):
     #enddef
 
 #endclass
-
-if __name__ == "__main__":
-    import argparse
-    import sys
-
-    args_parser = argparse.ArgumentParser(description="Generate code based on the input.")
-    args_parser.add_argument("-o", "--output", dest="output", default="", help="output file base name or empty (default) for stdout")
-    args_parser.add_argument("-I", "--includepath", dest="include_paths", nargs="*", default=[], help="paths where to look for included files")
-    args_parser.add_argument("-d", "--debug", dest="debug", default=False, action="store_true", help="turns debugging messages on")
-
-    args = args_parser.parse_args()
-
-    opts["debug"] = args.debug
-
-    interfaces_index_builder = InterfacesIndexBuilder(args.include_paths)
-    class_diagram_builder = ClassDiagramBuilder()
-
-    # Parse input into the parsimonious tree and process it.
-    inp = sys.stdin.read()
-    ParsimoniousNodeVisitor.process_input(inp, [ interfaces_index_builder, class_diagram_builder ])
-
-    # Print the codemodel to output.
-    print(codemodel.to_json(class_diagram_builder.build()), end="")
-#endif __main__
