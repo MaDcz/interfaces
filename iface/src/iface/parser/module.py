@@ -1,20 +1,29 @@
 import codemodel
+
 import parsimonious
 
 grammar = parsimonious.Grammar("""
 file                = consistent_block*
-consistent_block    = include / ns / using_directive / iface / empty
+consistent_block    = include / ns / using_directive / interface / empty
 include             = empty* include_decl
 attr                = empty* attr_decl attr_value_notation?
 ns                  = attr* empty* ns_decl empty* ns_body_open consistent_block* ns_body_close
 using_directive     = attr* empty* using_directive_keyword whsp type_name empty* directive_end
-iface               = attr* empty* iface_decl empty* iface_body_open field* empty* iface_body_close
+interface           = attr* empty* interface_decl whsp? interface_base? empty* interface_body_open field* empty* interface_body_close
 field               = attr* empty* field_decl
+
+interface_decl       = "interface" whsp type_name
+interface_base       = ":" whsp? type_ref
+interface_body_open  = "{{"
+interface_body_close = "}}"
+
+type_ref     = type_ns_part+ type_name
+type_ns_part = ns_name "."
+type_name    = {type_name}
 
 include_decl        = "include" whsp '"' include_filepath '"'
 attr_decl           = "@" attr_path
 ns_decl             = "namespace" whsp ns_name
-iface_decl          = "interface" whsp type_name
 field_decl          = field_type field_is_repeated? whsp field_name whsp? field_id_assignment? attr* field_end
 empty               = whsp? comment?
 
@@ -31,11 +40,6 @@ include_filepath    = ~'[^"]*'
 ns_name             = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 ns_body_open        = "{{"
 ns_body_close       = "}}"
-
-iface_keyword       = "interface"
-type_name           = {type_name}
-iface_body_open     = "{{"
-iface_body_close    = "}}"
 
 field_is_repeated   = whsp? "[]"
 field_type          = name_part name_next_part*
@@ -106,11 +110,28 @@ def get_parent_namespaces(builder):
     namespaces = []
     parent = builder.parent
     while parent is not None:
+        # FIXME Interface builder also creates a namespace.
         if isinstance(parent, NamespaceBuilder):
             namespaces.insert(0, parent.ns_name)
         parent = parent.parent
     pass
     return namespaces
+#enddef
+
+def resolve_type(type_path, builder):
+    """
+    Returns full type of the field. Note that the type can be provided
+    as a relative path so in order to resolve the full type, we need to
+    have the builders tree finalized. Don't use this property when the
+    builders tree isn't complete.
+    """
+    namespaces = get_parent_namespaces(builder)
+    for i in reversed(range(len(namespaces) + 1)):
+        full_type = ".".join(namespaces[0:i] + [ type_path ])
+        if full_type in field_types:
+            return full_type
+
+    raise RuntimeError("Cannot resolve field type.")
 #enddef
 
 class Builder(object):
@@ -297,6 +318,18 @@ class InterfaceBuilder(TypeBuilder):
     def __init__(self):
         super(InterfaceBuilder, self).__init__()
         self._fields = []
+        self._base_type_ref = None
+    #enddef
+
+    @property
+    def base_type_ref(self):
+        return self._base_type_ref
+    #enddef
+
+    @base_type_ref.setter
+    def base_type_ref(self, data):
+        self._base_type_ref = data.strip()
+        assert self._base_type_ref
     #enddef
 
     def add(self, child_builder):
@@ -309,6 +342,8 @@ class InterfaceBuilder(TypeBuilder):
 
     def _build(self):
         diagram_node = super(InterfaceBuilder, self)._build()
+        if self._base_type_ref:
+            diagram_node.attributes["base"] = resolve_type(self._base_type_ref, self)
         for field in self._fields:
             diagram_node.add(field.build())
         return diagram_node
@@ -523,8 +558,8 @@ class ParsimoniousNodeVisitor(parsimonious.NodeVisitor):
     NOI = set([ "include", "include_filepath",
                 "ns", "ns_name",
                 "using_directive",
-                "type_name",
-                "iface",
+                "type_name", "type_ref",
+                "interface", "interface_base",
                 "field", "field_type", "field_is_repeated", "field_name", "field_id",
                 "attr", "attr_path", "attr_value_string", "attr_value_bool", "attr_value_int", "attr_value_float" ])
 
@@ -541,7 +576,6 @@ class ParsimoniousNodeVisitor(parsimonious.NodeVisitor):
     def visit(self, parsimonious_node):
         node = ParsimoniousNodeVisitor.Node(parsimonious_node)
 
-        assert "iface" in ParsimoniousNodeVisitor.NOI
         interested = node.name in ParsimoniousNodeVisitor.NOI
 
         if interested:
@@ -590,11 +624,12 @@ class InterfacesIndexBuilder(object):
             self._type_nodes_stack.append(NamespaceBuilder())
 
         elif node.name == "ns_name":
-            assert self._type_nodes_stack
-            assert isinstance(self._type_nodes_stack[-1], NamespaceBuilder)
-            setattr(self._type_nodes_stack[-1], node.name, node.text)
+            if not self._find_parent_by_name("type_ref"):
+                assert self._type_nodes_stack
+                assert isinstance(self._type_nodes_stack[-1], NamespaceBuilder)
+                setattr(self._type_nodes_stack[-1], node.name, node.text)
 
-        elif node.name == "iface":
+        elif node.name == "interface":
             self._type_nodes_stack.append(InterfaceBuilder())
 
         elif node.name == "using_directive":
@@ -620,7 +655,7 @@ class InterfacesIndexBuilder(object):
             full_name = ""
             declaration = None
             definition = None
-            if self._find_parent_by_name("iface"):
+            if self._find_parent_by_name("interface"):
                 assert self._type_nodes_stack
                 assert isinstance(self._type_nodes_stack[-1], InterfaceBuilder)
                 setattr(self._type_nodes_stack[-1], node.name, node.text)
@@ -676,7 +711,7 @@ class InterfacesIndexBuilder(object):
             assert isinstance(self._type_nodes_stack[-1], NamespaceBuilder)
             self._type_nodes_stack.pop()
 
-        elif node.name == "iface":
+        elif node.name == "interface":
             assert self._type_nodes_stack
             assert isinstance(self._type_nodes_stack[-1], InterfaceBuilder)
             self._type_nodes_stack.pop()
@@ -706,7 +741,8 @@ class ClassDiagramBuilder(object):
 
     def __init__(self, root_builder=None):
         self.root_builder = root_builder if root_builder else FileBuilder()
-        self.builders_stack = [ self.root_builder ]
+        self.__builders_stack = [(self.root_builder, None)]
+        self.__nodes_processors_stack = []
     #enddef
 
     def build(self):
@@ -714,27 +750,39 @@ class ClassDiagramBuilder(object):
     #enddef
 
     def node_begin(self, node):
+        # First try if the node would be processed by a processor set by some parent node.
+        if self._process_node(node):
+            pass
         # namespaces
-        if node.name == "ns":
-            self._push_builder(NamespaceBuilder())
+        elif node.name == "ns":
+            self._push_builder(NamespaceBuilder(), node)
         elif node.name == "ns_name":
             self._top_builder_set_property(node.name, node.text)
         # using directive (used only to build index, not class diagram)
         elif node.name == "using_directive":
-            self._push_builder(NullBuilder())
+            self._push_builder(NullBuilder(), node)
         # interfaces
-        elif node.name == "iface":
-            self._push_builder(InterfaceBuilder())
+        elif node.name == "interface":
+            self._push_builder(InterfaceBuilder(), node)
         elif node.name == "type_name":
             self._top_builder_set_property(node.name, node.text)
+        elif node.name == "interface_base":
+            def process_node(node):
+                if node.name == "type_ref":
+                    self._top_builder_set_property("base_type_ref", node.text)
+                    self._employ_nodes_processor(None, node)
+                else:
+                    assert False
+            #enddef
+            self._employ_nodes_processor(process_node, node)
         # fields
         elif node.name == "field":
-            self._push_builder(FieldBuilder())
+            self._push_builder(FieldBuilder(), node)
         elif node.name in ["field_type", "field_is_repeated", "field_name", "field_id"]:
             self._top_builder_set_property(node.name, node.text)
         # attributes
         elif node.name == "attr":
-            self._push_builder(AttributeBuilder())
+            self._push_builder(AttributeBuilder(), node)
         elif node.name == "attr_path":
             self._top_builder_set_property("attr_path", node.text)
         elif node.name == "attr_value_string" \
@@ -747,32 +795,35 @@ class ClassDiagramBuilder(object):
 
     def node_end(self, node):
         if node.name == "ns":
-            self._top_builder_add(self._pop_builder())
+            self._top_builder_add(self._pop_builder(node))
         elif node.name == "using_directive":
-            self._pop_builder()
-        elif node.name == "iface":
-            self._top_builder_add(self._pop_builder())
+            self._pop_builder(node)
+        elif node.name == "interface":
+            self._top_builder_add(self._pop_builder(node))
         elif node.name == "field":
-            self._top_builder_add(self._pop_builder())
+            self._top_builder_add(self._pop_builder(node))
         elif node.name == "attr":
-            attr_builder = self._pop_builder()
+            attr_builder = self._pop_builder(node)
             attr_builder.build(self._top_builder)
+
+        self._remove_nodes_processor(node)
     #enddef
 
-    def _push_builder(self, builder):
+    def _push_builder(self, builder, node):
         print_debug("Pushing {} on top of the builders stack.".format(builder))
 
         if not isinstance(builder, Builder):
             raise TypeError("Not a Builder instance")
 
-        self.builders_stack.append(builder)
+        self.__builders_stack.append((builder, node))
     #enddef
 
-    def _pop_builder(self):
-        builder = self.builders_stack.pop()
+    def _pop_builder(self, node):
+        assert self.__builders_stack
+        assert id(self.__builders_stack[-1][1]) == id(node)
 
-        print_debug("Popping {} from top of the builders stack.".format(builder))
-
+        print_debug("Popping {} from top of the builders stack.".format(self.__builders_stack[-1][0]))
+        builder = self.__builders_stack.pop()[0]
         return builder
     #enddef
 
@@ -781,11 +832,11 @@ class ClassDiagramBuilder(object):
         '''
         Access to the builder currently on top of the stack.
         '''
-        return self.builders_stack[-1]
+        return self.__builders_stack[-1][0]
     #enddef
 
     def _top_builder_set_property(self, name, value):
-        if not self.builders_stack:
+        if not self.__builders_stack:
             raise Exception("No builder initialized")
 
         #def to_camel_case(what):
@@ -805,14 +856,46 @@ class ClassDiagramBuilder(object):
         #    return str(res)
         ##enddef
 
-        setattr(self.builders_stack[-1], name, value)
+        setattr(self.__builders_stack[-1][0], name, value)
     #enddef
 
     def _top_builder_add(self, item):
-        if not self.builders_stack:
+        if not self.__builders_stack:
             raise Exception("No builder initialized")
 
-        self.builders_stack[-1].add(item)
+        self.__builders_stack[-1][0].add(item)
+    #enddef
+
+    def _employ_nodes_processor(self, processor, node):
+        assert node
+        if not processor:
+            def do_nothing(node):
+                pass
+            #enddef
+            processor = do_nothing
+        #endif
+        print_debug("Employing processor for node {}.".format(node.name))
+        self.__nodes_processors_stack.append((processor, node))
+    #enddef
+
+    def _remove_nodes_processor(self, node):
+        if self.__nodes_processors_stack and id(self.__nodes_processors_stack[-1][1]) == id(node):
+            print_debug("Popping processor for node {}.".format(self.__nodes_processors_stack[-1][1].name))
+            self.__nodes_processors_stack.pop()
+            assert not self.__nodes_processors_stack \
+                    or id(self.__nodes_processors_stack[-1][1]) != id(node)
+            return True
+        else:
+            return False
+    #enddef
+
+    def _process_node(self, node):
+        if self.__nodes_processors_stack:
+            print_debug("Processing node by {} routine.".format(self.__nodes_processors_stack[-1][1].name))
+            self.__nodes_processors_stack[-1][0](node)
+            return True
+        else:
+            return False
     #enddef
 
 #endclass
