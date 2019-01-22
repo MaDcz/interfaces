@@ -122,8 +122,8 @@ def resolve_type(type_path, builder):
     """
     Returns full type of the field. Note that the type can be provided
     as a relative path so in order to resolve the full type, we need to
-    have the builders tree finalized. Don't use this property when the
-    builders tree isn't complete.
+    have the builders tree finalized. Don't use this when the builders
+    tree isn't complete.
     """
     namespaces = get_parent_namespaces(builder)
     for i in reversed(range(len(namespaces) + 1)):
