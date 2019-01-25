@@ -17,7 +17,7 @@ interface_base       = ":" whsp? type_ref
 interface_body_open  = "{{"
 interface_body_close = "}}"
 
-type_ref     = type_ns_part+ type_name
+type_ref     = type_ns_part* type_name
 type_ns_part = ns_name "."
 type_name    = {type_name}
 
@@ -609,102 +609,212 @@ class ParsimoniousNodeVisitor(parsimonious.NodeVisitor):
 
 #endclass
 
-class InterfacesIndexBuilder(object):
+class NodesHandler(object):
+
+    def __init__(self):
+        self.__nodes_processors_stack = []
+    #enddef
+
+    def _employ_nodes_processor(self, processor, node):
+        assert node
+        if not processor:
+            def do_nothing(node):
+                pass
+            #enddef
+            processor = do_nothing
+        #endif
+        print_debug("Employing processor for node {}. (id(node)={})".format(node.name, id(node)))
+        self.__nodes_processors_stack.append((processor, node))
+    #enddef
+
+    def _remove_nodes_processor(self, node):
+        if self.__nodes_processors_stack and self.__nodes_processors_stack[-1][1] is node:
+            print_debug("Popping processor for node {}.".format(self.__nodes_processors_stack[-1][1].name))
+            self.__nodes_processors_stack.pop()
+            assert not self.__nodes_processors_stack \
+                    or self.__nodes_processors_stack[-1][1] is not node
+            return True
+        else:
+            return False
+    #enddef
+
+    def _process_node(self, node):
+        if self.__nodes_processors_stack:
+            print_debug("Processing node by {} routine.".format(self.__nodes_processors_stack[-1][1].name))
+            self.__nodes_processors_stack[-1][0](node)
+            return True
+        else:
+            return False
+    #enddef
+
+#enddef
+
+class InterfacesIndexBuilder(NodesHandler):
+
+    indexed_files = set()
 
     def __init__(self, include_paths):
+        super(InterfacesIndexBuilder, self).__init__()
+
         self._include_paths = include_paths
-        self._nodes_stack = []
         self._type_nodes_stack = []
 
         self._attribute_builder = None
     #enddef
 
     def node_begin(self, node):
-        if node.name == "ns":
-            self._type_nodes_stack.append(NamespaceBuilder())
+        if self._process_node(node):
+            return
 
-        elif node.name == "ns_name":
-            if not self._find_parent_by_name("type_ref"):
-                assert self._type_nodes_stack
-                assert isinstance(self._type_nodes_stack[-1], NamespaceBuilder)
-                setattr(self._type_nodes_stack[-1], node.name, node.text)
-
-        elif node.name == "interface":
-            self._type_nodes_stack.append(InterfaceBuilder())
-
-        elif node.name == "using_directive":
-            self._type_nodes_stack.append(TypeBuilder())
-
-        elif node.name == "type_name":
-            def get_name(builder_or_name):
-                if isinstance(builder_or_name, str):
-                    return builder_or_name
-                elif isinstance(builder_or_name, NamespaceBuilder):
-                    return builder_or_name.ns_name
-                elif isinstance(builder_or_name, TypeBuilder):
-                    return builder_or_name.type_name
-                else:
-                    assert False
-            #enddef
-
-            def get_full_name(stack):
-                full_name_parts = map(lambda b: get_name(b), stack)
-                return ".".join(full_name_parts)
-            #enddef
-
-            full_name = ""
-            declaration = None
-            definition = None
-            if self._find_parent_by_name("interface"):
-                assert self._type_nodes_stack
-                assert isinstance(self._type_nodes_stack[-1], InterfaceBuilder)
-                setattr(self._type_nodes_stack[-1], node.name, node.text)
-                full_name = get_full_name(self._type_nodes_stack)
-                definition = self._type_nodes_stack[-1]
-            elif self._find_parent_by_name("using_directive"):
-                assert self._type_nodes_stack
-                assert isinstance(self._type_nodes_stack[-1], TypeBuilder)
-                setattr(self._type_nodes_stack[-1], node.name, node.text)
-                full_name = get_full_name(self._type_nodes_stack)
-                declaration = self._type_nodes_stack[-1]
+        def get_name(builder_or_name):
+            if isinstance(builder_or_name, str):
+                return builder_or_name
+            elif isinstance(builder_or_name, NamespaceBuilder):
+                return builder_or_name.ns_name
+            elif isinstance(builder_or_name, TypeBuilder):
+                return builder_or_name.type_name
             else:
                 assert False
+        #enddef
 
-            # Register interface.
-            assert full_name
-            print_debug("Registering type '{}'.".format(full_name))
-            register_type(full_name, declaration=declaration, definition=definition)
+        def get_full_name(stack):
+            full_name_parts = map(lambda b: get_name(b), stack)
+            return ".".join(full_name_parts)
+        #enddef
 
-        # attributes
-        elif node.name == "attr":
-            assert not self._attribute_builder
-            self._attribute_builder = AttributeBuilder()
-        elif node.name == "attr_path":
-            assert self._attribute_builder
-            self._attribute_builder.attr_path = node.text
-        elif node.name == "attr_value_string" \
-                or node.name == "attr_value_bool" \
-                or node.name == "attr_value_int" \
-                or node.name == "attr_value_float":
-            assert self._attribute_builder
-            self._attribute_builder.attr_value = (node.text, node.name)
+        def includes_handling(node):
+            if node.name == "include_filepath":
+                for include_path in self._include_paths:
+                    import os.path
+                    filepath = os.path.join(include_path, node.text)
+                    if filepath not in InterfacesIndexBuilder.indexed_files:
+                        print_debug(">>> Indexing file '{}'".format(filepath))
+                        InterfacesIndexBuilder.indexed_files.add(filepath)
+                        ParsimoniousNodeVisitor.process_file(filepath,
+                                [ InterfacesIndexBuilder(self._include_paths) ])
+                        print_debug("<<< Indexing file '{}'".format(filepath))
+                return True
+            else:
+                return False
+        #enddef
 
-        elif node.name == "include_filepath":
-            for include_path in self._include_paths:
-                import os.path
-                # TODO Detect already indexed and loops.
-                filepath = os.path.join(include_path, node.text)
-                print_debug(">>> Indexing file '{}'".format(filepath))
-                ParsimoniousNodeVisitor.process_file(filepath,
-                        [ InterfacesIndexBuilder(self._include_paths) ])
-                print_debug("<<< Indexing file '{}'".format(filepath))
+        def attributes_handling(node):
+            if node.name == "attr":
+                assert not self._attribute_builder
+                self._attribute_builder = AttributeBuilder()
+
+                def process_node(node):
+                    if node.name == "attr_path":
+                        assert self._attribute_builder
+                        self._attribute_builder.attr_path = node.text
+                    elif node.name == "attr_value_string" \
+                            or node.name == "attr_value_bool" \
+                            or node.name == "attr_value_int" \
+                            or node.name == "attr_value_float":
+                        assert self._attribute_builder
+                        self._attribute_builder.attr_value = (node.text, node.name)
+                #enddef
+                self._employ_nodes_processor(process_node, node)
+
+                return True
+            else:
+                return False
+        #enddef
+
+        def namespaces_handling(node):
+            if node.name == "ns":
+                self._type_nodes_stack.append(NamespaceBuilder())
+
+                def process_node(node):
+                    if node.name == "ns_name":
+                        assert self._type_nodes_stack
+                        assert isinstance(self._type_nodes_stack[-1], NamespaceBuilder)
+                        setattr(self._type_nodes_stack[-1], node.name, node.text)
+                    elif attributes_handling(node) \
+                            or namespaces_handling(node) \
+                            or using_directives_handling(node) \
+                            or interfaces_handling(node):
+                        pass
+                #enddef
+                self._employ_nodes_processor(process_node, node)
+
+                return True
+            else:
+                return False
+        #enddef
+
+        def using_directives_handling(node):
+            if node.name == "using_directive":
+                self._type_nodes_stack.append(TypeBuilder())
+
+                def process_node(node):
+                    if node.name == "type_name":
+                        assert self._type_nodes_stack
+                        assert isinstance(self._type_nodes_stack[-1], TypeBuilder)
+
+                        setattr(self._type_nodes_stack[-1], node.name, node.text)
+                        full_name = get_full_name(self._type_nodes_stack)
+                        declaration = self._type_nodes_stack[-1]
+
+                        assert full_name
+                        print_debug("Registering type '{}'.".format(full_name))
+                        register_type(full_name, declaration=declaration)
+                    elif attributes_handling(node):
+                        pass
+                #enddef
+                self._employ_nodes_processor(process_node, node)
+
+                return True
+            else:
+                return False
+        #enddef
+
+        def interfaces_handling(node):
+            if node.name == "interface":
+                self._type_nodes_stack.append(InterfaceBuilder())
+
+                def process_node(node):
+                    if node.name == "type_name":
+                        assert self._type_nodes_stack
+                        assert isinstance(self._type_nodes_stack[-1], InterfaceBuilder)
+
+                        setattr(self._type_nodes_stack[-1], node.name, node.text)
+                        full_name = get_full_name(self._type_nodes_stack)
+                        definition = self._type_nodes_stack[-1]
+
+                        assert full_name
+                        print_debug("Registering type '{}'.".format(full_name))
+                        register_type(full_name, definition=definition)
+                    elif node.name == "interface_base":
+                        # Avoid processing 'type_name' node declaring base interface name.
+                        self._employ_nodes_processor(None, node)
+                    elif attributes_handling(node):
+                        pass
+                #enddef
+                self._employ_nodes_processor(process_node, node)
+
+                return True
+            else:
+                return False
+        #enddef
+
+        if includes_handling(node):
+            pass
+        elif namespaces_handling(node):
+            pass
+        elif using_directives_handling(node):
+            pass
+        elif interfaces_handling(node):
+            pass
+        elif attributes_handling(node):
+            raise Exception("Attributes are meant to be added to some entity, they aren't expected on the top level.")
+        elif node.name == "type_name":
+            raise Exception("Parser node 'type_name' shouldn't be handled on the top level.")
         #endif
-
-        self._nodes_stack.append(node)
     #enddef
 
     def node_end(self, node):
-        self._nodes_stack.pop()
+        self._remove_nodes_processor(node)
 
         if node.name == "ns":
             assert self._type_nodes_stack
@@ -728,21 +838,15 @@ class InterfacesIndexBuilder(object):
             self._attribute_builder = None
     #enddef
 
-    def _find_parent_by_name(self, name):
-        for node in reversed(self._nodes_stack):
-            if node.name == name:
-                return node
-        return None
-    #enddef
-
 #endclass
 
-class ClassDiagramBuilder(object):
+class ClassDiagramBuilder(NodesHandler):
 
     def __init__(self, root_builder=None):
+        super(ClassDiagramBuilder, self).__init__()
+
         self.root_builder = root_builder if root_builder else FileBuilder()
         self.__builders_stack = [(self.root_builder, None)]
-        self.__nodes_processors_stack = []
     #enddef
 
     def build(self):
@@ -810,17 +914,17 @@ class ClassDiagramBuilder(object):
     #enddef
 
     def _push_builder(self, builder, node):
-        print_debug("Pushing {} on top of the builders stack.".format(builder))
+        print_debug("Pushing {} on top of the builders stack. type(builder)={}".format(builder, type(builder)))
 
         if not isinstance(builder, Builder):
-            raise TypeError("Not a Builder instance")
+            raise TypeError("{} is not a Builder instance".format(builder))
 
         self.__builders_stack.append((builder, node))
     #enddef
 
     def _pop_builder(self, node):
         assert self.__builders_stack
-        assert id(self.__builders_stack[-1][1]) == id(node)
+        assert self.__builders_stack[-1][1] is node
 
         print_debug("Popping {} from top of the builders stack.".format(self.__builders_stack[-1][0]))
         builder = self.__builders_stack.pop()[0]
@@ -864,38 +968,6 @@ class ClassDiagramBuilder(object):
             raise Exception("No builder initialized")
 
         self.__builders_stack[-1][0].add(item)
-    #enddef
-
-    def _employ_nodes_processor(self, processor, node):
-        assert node
-        if not processor:
-            def do_nothing(node):
-                pass
-            #enddef
-            processor = do_nothing
-        #endif
-        print_debug("Employing processor for node {}.".format(node.name))
-        self.__nodes_processors_stack.append((processor, node))
-    #enddef
-
-    def _remove_nodes_processor(self, node):
-        if self.__nodes_processors_stack and id(self.__nodes_processors_stack[-1][1]) == id(node):
-            print_debug("Popping processor for node {}.".format(self.__nodes_processors_stack[-1][1].name))
-            self.__nodes_processors_stack.pop()
-            assert not self.__nodes_processors_stack \
-                    or id(self.__nodes_processors_stack[-1][1]) != id(node)
-            return True
-        else:
-            return False
-    #enddef
-
-    def _process_node(self, node):
-        if self.__nodes_processors_stack:
-            print_debug("Processing node by {} routine.".format(self.__nodes_processors_stack[-1][1].name))
-            self.__nodes_processors_stack[-1][0](node)
-            return True
-        else:
-            return False
     #enddef
 
 #endclass
