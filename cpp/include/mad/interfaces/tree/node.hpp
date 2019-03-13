@@ -1,5 +1,4 @@
-#ifndef __MAD_INTERFACES_TREE_NODE_HPP__
-#define __MAD_INTERFACES_TREE_NODE_HPP__
+#pragma once
 
 namespace mad { namespace interfaces { namespace tree {
 
@@ -10,5 +9,3 @@ public:
 };
 
 }}} // namespace mad::interfaces::tree
-
-#endif // __MAD_INTERFACES_TREE_NODE_HPP__

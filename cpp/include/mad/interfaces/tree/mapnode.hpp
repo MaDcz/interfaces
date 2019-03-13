@@ -1,5 +1,4 @@
-#ifndef __MAD_INTERFACES_TREE_MAPNODE_HPP__
-#define __MAD_INTERFACES_TREE_MAPNODE_HPP__
+#pragma once
 
 #include "node.hpp"
 
@@ -11,7 +10,7 @@
 
 namespace mad { namespace interfaces { namespace tree {
 
-class MapNode : public Node
+class MapNode : public virtual Node
 {
 public:
   using key_type = std::string;
@@ -129,5 +128,3 @@ private:
 };
 
 }}} // namespace mad::interfaces::tree
-
-#endif // __MAD_INTERFACES_TREE_MAPNODE_HPP__

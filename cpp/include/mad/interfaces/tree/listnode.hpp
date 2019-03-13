@@ -1,5 +1,4 @@
-#ifndef __MAD_INTERFACES_TREE_LISTNODE_HPP__
-#define __MAD_INTERFACES_TREE_LISTNODE_HPP__
+#pragma once
 
 #include "node.hpp"
 
@@ -11,7 +10,7 @@
 
 namespace mad { namespace interfaces { namespace tree {
 
-class ListNode : public Node
+class ListNode : public virtual Node
 {
 public:
   class Iterator : public std::iterator<std::random_access_iterator_tag, Node>
@@ -125,5 +124,3 @@ private:
 };
 
 }}} // namespace mad::interfaces::tree
-
-#endif // __MAD_INTERFACES_TREE_LISTNODE_HPP__
