@@ -24,7 +24,7 @@ type_name    = {type_name}
 include_decl        = "include" whsp '"' include_filepath '"'
 attr_decl           = "@" attr_path
 ns_decl             = "namespace" whsp ns_name
-field_decl          = field_type field_is_repeated? whsp field_name whsp? field_id_assignment? attr* field_end
+field_decl          = field_is_ref? whsp? field_type field_is_repeated? whsp field_name whsp? field_id_assignment? attr* field_end
 empty               = whsp? comment?
 
 using_directive_keyword = "using"
@@ -41,6 +41,7 @@ ns_name             = ~"[a-zA-Z_][a-zA-Z0-9_]*"
 ns_body_open        = "{{"
 ns_body_close       = "}}"
 
+field_is_ref        = "ref"
 field_is_repeated   = whsp? "[]"
 field_type          = name_part name_next_part*
 field_name          = ~"[a-zA-Z_][a-zA-Z0-9_]*"
@@ -355,6 +356,7 @@ class FieldBuilder(NodeBuilder):
 
     def __init__(self):
         super(FieldBuilder, self).__init__()
+        self._is_ref = False
         self._type = ""
         self._name = ""
         self._id = ""
@@ -401,10 +403,21 @@ class FieldBuilder(NodeBuilder):
         self._is_repeated = True
     #enddef
 
+    @property
+    def field_is_ref(self):
+        return self._is_ref
+    #enddef
+
+    @field_is_ref.setter
+    def field_is_ref(self, data):
+        self._is_ref = True
+    #enddef
+
     def _build(self):
         diagram_node = self._create_node(codemodel.Attribute)
         # TODO Don't split it, the splitted form can't be used as a key of an json object. The '.' notation
         # is used in 'using' section, so keep it consistent.
+        diagram_node.attributes["is_ref"] = self._is_ref
         diagram_node.attributes["type"] = self._type.split(".")
         diagram_node.attributes["full_type"] = self._full_type.split(".")
         diagram_node.attributes["name"] = self._name
@@ -560,7 +573,7 @@ class ParsimoniousNodeVisitor(parsimonious.NodeVisitor):
                 "using_directive",
                 "type_name", "type_ref",
                 "interface", "interface_base",
-                "field", "field_type", "field_is_repeated", "field_name", "field_id",
+                "field", "field_is_ref", "field_type", "field_is_repeated", "field_name", "field_id",
                 "attr", "attr_path", "attr_value_string", "attr_value_bool", "attr_value_int", "attr_value_float" ])
 
     def __init__(self, builders=[]):
@@ -882,7 +895,7 @@ class ClassDiagramBuilder(NodesHandler):
         # fields
         elif node.name == "field":
             self._push_builder(FieldBuilder(), node)
-        elif node.name in ["field_type", "field_is_repeated", "field_name", "field_id"]:
+        elif node.name in ["field_is_ref", "field_type", "field_is_repeated", "field_name", "field_id"]:
             self._top_builder_set_property(node.name, node.text)
         # attributes
         elif node.name == "attr":

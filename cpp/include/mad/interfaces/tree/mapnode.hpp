@@ -3,10 +3,10 @@
 #include "node.hpp"
 
 #include <iterator>
-#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 namespace mad { namespace interfaces { namespace tree {
 
@@ -51,11 +51,11 @@ public:
   class Iterator : public std::iterator<std::bidirectional_iterator_tag, KeyValuePair>
   {
   private:
-    typedef std::iterator<std::bidirectional_iterator_tag, KeyValuePair> base_type;
+    using base_type = std::iterator<std::bidirectional_iterator_tag, KeyValuePair>;
 
   public:
     Iterator() {}
-    explicit Iterator(typename std::map<key_type, KeyValuePair>::iterator it) : m_it(it) {}
+    explicit Iterator(typename std::unordered_map<key_type, KeyValuePair>::iterator it) : m_it(it) {}
     Iterator& operator++() { ++m_it; return *this; }
     Iterator operator++(int) { Iterator tmp(*this); operator++(); return tmp; }
     bool operator==(const Iterator& other) const { return m_it == other.m_it; }
@@ -66,17 +66,17 @@ public:
     Iterator operator--(int) { Iterator tmp(*this); operator--(); return tmp; }
 
   private:
-    typename std::map<key_type, KeyValuePair>::iterator m_it;
+    typename std::unordered_map<key_type, KeyValuePair>::iterator m_it;
   };
 
   class ConstIterator : public std::iterator<std::bidirectional_iterator_tag, const KeyValuePair>
   {
   private:
-    typedef std::iterator<std::bidirectional_iterator_tag, const KeyValuePair> base_type;
+    using base_type = std::iterator<std::bidirectional_iterator_tag, const KeyValuePair>;
 
   public:
     ConstIterator() {}
-    explicit ConstIterator(typename std::map<key_type, KeyValuePair>::const_iterator it) : m_it(it) {}
+    explicit ConstIterator(typename std::unordered_map<key_type, KeyValuePair>::const_iterator it) : m_it(it) {}
     ConstIterator& operator++() { ++m_it; return *this; }
     ConstIterator operator++(int) { ConstIterator tmp(*this); operator++(); return tmp; }
     bool operator==(const ConstIterator& other) const { return m_it == other.m_it; }
@@ -87,13 +87,15 @@ public:
     ConstIterator operator--(int) { ConstIterator tmp(*this); operator--(); return tmp; }
 
   private:
-    typename std::map<key_type, KeyValuePair>::const_iterator m_it;
+    typename std::unordered_map<key_type, KeyValuePair>::const_iterator m_it;
   };
 
-  typedef Iterator iterator;
-  typedef ConstIterator const_iterator;
+  using iterator = Iterator;
+  using const_iterator = ConstIterator;
 
 public:
+  ~MapNode() {}
+
   iterator begin() { return iterator(m_nodes.begin()); }
   const_iterator begin() const { return const_iterator(m_nodes.begin()); }
   iterator end() { return iterator(m_nodes.end()); }
@@ -124,7 +126,7 @@ public:
   void clear() { m_nodes.clear(); }
 
 private:
-  std::map<key_type, KeyValuePair> m_nodes;
+  std::unordered_map<key_type, KeyValuePair> m_nodes;
 };
 
 }}} // namespace mad::interfaces::tree
