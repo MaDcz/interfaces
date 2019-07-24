@@ -112,7 +112,7 @@ public:
 
   size_t size() const { return m_nodes.size(); }
 
-  void add(std::unique_ptr<Node> node)
+  void add(std::unique_ptr<Node>&& node)
   {
     if (!node)
       throw std::logic_error("Passed node is nullptr");
