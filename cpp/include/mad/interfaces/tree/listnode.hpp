@@ -112,6 +112,8 @@ public:
 
   size_t size() const { return m_nodes.size(); }
 
+  bool empty() const { return m_nodes.empty(); }
+
   void add(std::unique_ptr<Node>&& node)
   {
     if (!node)
