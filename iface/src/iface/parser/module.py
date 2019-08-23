@@ -94,7 +94,6 @@ register_type("float", treatment=TREATMENT_VALUE_TYPE)
 register_type("double", treatment=TREATMENT_VALUE_TYPE)
 register_type("bool", treatment=TREATMENT_VALUE_TYPE)
 register_type("string", treatment=TREATMENT_REFERENCE_TYPE)
-register_type("bytes", treatment=TREATMENT_REFERENCE_TYPE)
 
 
 opts = {
