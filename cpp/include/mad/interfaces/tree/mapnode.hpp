@@ -22,7 +22,7 @@ public:
     {
     }
 
-    KeyValuePair(const key_type* key, std::unique_ptr<Node> value)
+    KeyValuePair(const key_type& key, std::unique_ptr<Node>&& value)
       : m_key(key),
         m_value(std::move(value))
     {
@@ -30,7 +30,7 @@ public:
 
     const key_type& key() const
     {
-      return *m_key;
+      return m_key;
     }
 
     Node& value()
@@ -44,7 +44,7 @@ public:
     }
 
   private:
-    const key_type* m_key = nullptr;
+    key_type m_key;
     std::unique_ptr<Node> m_value;
   };
 
@@ -94,6 +94,16 @@ public:
   using const_iterator = ConstIterator;
 
 public:
+  // The class is made movable only explicitly here as the MSVC was throwing a compilation error
+  // without it. It was trying to copy the instance even with the use of std::move().
+  MapNode() = default;
+
+  MapNode(const MapNode&) = delete;
+  MapNode& operator=(const MapNode&) = delete;
+
+  MapNode(MapNode&&) = default;
+  MapNode& operator=(MapNode&&) = default;
+
   ~MapNode() {}
 
   iterator begin() { return iterator(m_nodes.begin()); }
@@ -108,7 +118,7 @@ public:
 
     auto insert = m_nodes.emplace(key, KeyValuePair());
     if (insert.second)
-        insert.first->second = KeyValuePair(&insert.first->first, std::move(node));
+        insert.first->second = KeyValuePair(insert.first->first, std::move(node));
 
     return std::make_pair(iterator(insert.first), insert.second);
   }
