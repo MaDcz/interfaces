@@ -114,15 +114,37 @@ public:
 
   bool empty() const { return m_nodes.empty(); }
 
-  void add(std::unique_ptr<Node>&& node)
-  {
-    if (!node)
-      throw std::logic_error("Passed node is nullptr");
-    m_nodes.emplace_back(std::move(node));
-  }
+  void add(std::unique_ptr<Node>&& node);
+
+  void insert(size_t pos, std::unique_ptr<Node>&& node);
+
+  void erase(size_t pos);
 
 private:
   std::vector<std::unique_ptr<Node>> m_nodes;
 };
+
+inline void ListNode::add(std::unique_ptr<Node>&& node)
+{
+  if (!node)
+    throw std::logic_error("Passed node is nullptr");
+
+  m_nodes.emplace_back(std::move(node));
+}
+
+inline void ListNode::insert(size_t pos, std::unique_ptr<Node>&& node)
+{
+  if (!node)
+    throw std::logic_error("Passed node is nullptr");
+  if (pos > size())
+    throw std::out_of_range("The position is out of range.");
+
+  m_nodes.emplace(std::next(m_nodes.begin(), pos), std::move(node));
+}
+
+inline void ListNode::erase(size_t pos)
+{
+  m_nodes.erase(std::next(m_nodes.begin(), pos));
+}
 
 }}} // namespace mad::interfaces::tree
