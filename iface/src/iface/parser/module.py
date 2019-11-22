@@ -192,6 +192,28 @@ class NodeBuilder(Builder):
 
 #endclass
 
+def get_node_name(node):
+    if isinstance(node, NamespaceBuilder):
+        return node.ns_name
+    elif isinstance(node, TypeBuilder):
+        return node.type_name
+    elif isinstance(node, FieldBuilder):
+        return node.field_name
+    else:
+        return ""
+#enddef
+
+def get_node_full_name(node):
+    name_parts = []
+    while node:
+        node_name = get_node_name(node)
+        if not node_name:
+            break
+        name_parts.insert(0, node_name)
+        node = node.parent
+    return ".".join(name_parts)
+#enddef
+
 class FileBuilder(NodeBuilder):
 
     def __init__(self):
@@ -452,7 +474,7 @@ class FieldBuilder(NodeBuilder):
             if full_type in field_types:
                 return full_type
 
-        raise RuntimeError("Cannot resolve field type.")
+        raise RuntimeError("Cannot resolve the type of the field '{}'.".format(get_node_full_name(self)))
     #enddef
 
 #endclass
