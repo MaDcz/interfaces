@@ -62,8 +62,6 @@ public:
     bool operator!=(const Iterator& other) const { return m_it != other.m_it; }
     typename base_type::reference operator*() const { return m_it->second; }
     typename base_type::pointer operator->() const { return &m_it->second; }
-    Iterator& operator--() { --m_it; return *this; }
-    Iterator operator--(int) { Iterator tmp(*this); operator--(); return tmp; }
 
   private:
     typename std::unordered_map<key_type, KeyValuePair>::iterator m_it;
@@ -83,8 +81,6 @@ public:
     bool operator!=(const ConstIterator& other) const { return m_it != other.m_it; }
     typename base_type::reference operator*() const { return m_it->second; }
     typename base_type::pointer operator->() const { return &m_it->second; }
-    ConstIterator& operator--() { --m_it; return *this; }
-    ConstIterator operator--(int) { ConstIterator tmp(*this); operator--(); return tmp; }
 
   private:
     typename std::unordered_map<key_type, KeyValuePair>::const_iterator m_it;
